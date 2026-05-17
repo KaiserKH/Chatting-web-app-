@@ -23,13 +23,30 @@ async function joinConversationRooms(socket) {
 }
 
 async function setUserStatus(userId, status) {
-  await query('UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?', [status, userId]);
+  const lastSeenSql = status === 'offline' ? ', last_seen_at = NOW()' : '';
+  await query(`UPDATE users SET status = ?, updated_at = NOW()${lastSeenSql} WHERE id = ?`, [status, userId]);
+}
+
+function emitPresence(io, userId, status, lastSeenAt = null) {
+  io.emit('user_status_update', {
+    userId,
+    status,
+    lastSeenAt
+  });
+
+  if (status === 'online') {
+    io.emit('user_online', { userId });
+  }
+
+  if (status === 'offline') {
+    io.emit('user_offline', { userId });
+  }
 }
 
 async function registerSocketHandlers(io, socket) {
   onlineUsers.add(socket.user.id);
   await setUserStatus(socket.user.id, 'online');
-  io.emit('user_online', { userId: socket.user.id });
+  emitPresence(io, socket.user.id, 'online');
   await joinConversationRooms(socket);
 
   socket.on('join_conversations', async () => {
@@ -68,7 +85,7 @@ async function registerSocketHandlers(io, socket) {
     onlineUsers.delete(socket.user.id);
     if (!onlineUsers.has(socket.user.id)) {
       await setUserStatus(socket.user.id, 'offline');
-      io.emit('user_offline', { userId: socket.user.id });
+      emitPresence(io, socket.user.id, 'offline', new Date().toISOString());
     }
   });
 }

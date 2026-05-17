@@ -1,6 +1,16 @@
 const bcrypt = require('bcryptjs');
 const { query } = require('../models/db');
 const { signAccessToken, signRefreshToken, revokeRefreshToken, verifyRefreshToken } = require('../utils/jwt');
+const isProduction = process.env.NODE_ENV === 'production';
+
+function refreshCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: isProduction ? 'strict' : 'lax',
+    secure: isProduction,
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  };
+}
 
 function issueTokens(user) {
   const payload = { id: user.id, username: user.username, email: user.email };
@@ -20,6 +30,7 @@ function publicUser(user) {
     avatar: user.avatar,
     bio: user.bio,
     status: user.status,
+    last_seen_at: user.last_seen_at,
     is_verified: !!user.is_verified,
     created_at: user.created_at,
     updated_at: user.updated_at
@@ -50,19 +61,14 @@ async function register(req, res) {
     );
 
     const userRows = await query(
-      'SELECT id, username, full_name, email, phone, avatar, bio, status, is_verified, created_at, updated_at FROM users WHERE id = ?',
+      'SELECT id, username, full_name, email, phone, avatar, bio, status, last_seen_at, is_verified, created_at, updated_at FROM users WHERE id = ?',
       [result.insertId]
     );
 
     const user = userRows[0];
     const tokens = issueTokens(user);
 
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions());
 
     return res.status(201).json({
       message: 'Registration successful',
@@ -84,7 +90,7 @@ async function login(req, res) {
     }
 
     const rows = await query(
-      'SELECT id, username, full_name, email, phone, password_hash, avatar, bio, status, is_verified, created_at, updated_at FROM users WHERE email = ? OR username = ? LIMIT 1',
+      'SELECT id, username, full_name, email, phone, password_hash, avatar, bio, status, last_seen_at, is_verified, created_at, updated_at FROM users WHERE email = ? OR username = ? LIMIT 1',
       [identifier, identifier]
     );
 
@@ -99,12 +105,7 @@ async function login(req, res) {
     }
 
     const tokens = issueTokens(user);
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions());
 
     return res.json({
       message: 'Login successful',
@@ -142,7 +143,7 @@ async function refresh(req, res) {
     revokeRefreshToken(token);
 
     const rows = await query(
-      'SELECT id, username, full_name, email, phone, avatar, bio, status, is_verified, created_at, updated_at FROM users WHERE id = ?',
+      'SELECT id, username, full_name, email, phone, avatar, bio, status, last_seen_at, is_verified, created_at, updated_at FROM users WHERE id = ?',
       [decoded.id]
     );
 
@@ -152,12 +153,7 @@ async function refresh(req, res) {
 
     const user = rows[0];
     const tokens = issueTokens(user);
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions());
 
     return res.json({
       accessToken: tokens.accessToken,

@@ -11,7 +11,7 @@ async function sendFriendRequest(req, res) {
       return res.status(400).json({ error: 'You cannot send a request to yourself' });
     }
 
-    const targetRows = await query('SELECT id, username, full_name, avatar FROM users WHERE id = ?', [targetUserId]);
+    const targetRows = await query('SELECT id, username, full_name, avatar, status, last_seen_at FROM users WHERE id = ?', [targetUserId]);
     if (!targetRows.length) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -98,7 +98,7 @@ async function acceptFriendRequest(req, res) {
     });
 
     const io = req.app.get('io');
-    const senderRows = await query('SELECT id, username, full_name, avatar FROM users WHERE id = ?', [request.sender_id]);
+    const senderRows = await query('SELECT id, username, full_name, avatar, status, last_seen_at FROM users WHERE id = ?', [request.sender_id]);
     await createNotification({
       socket: io,
       userId: request.sender_id,
@@ -186,6 +186,7 @@ async function listFriends(req, res) {
          u.avatar,
          u.bio,
          u.status,
+         u.last_seen_at,
          u.is_verified,
          f.created_at
        FROM friends f
@@ -205,6 +206,7 @@ async function listFriends(req, res) {
         avatar: friend.avatar,
         bio: friend.bio,
         status: friend.status,
+        last_seen_at: friend.last_seen_at,
         is_verified: !!friend.is_verified,
         created_at: friend.created_at
       }))
@@ -219,7 +221,7 @@ async function listIncomingRequests(req, res) {
     const userId = req.user.id;
     const rows = await query(
       `SELECT fr.id, fr.sender_id, fr.receiver_id, fr.status, fr.created_at,
-              u.username, u.full_name, u.avatar, u.bio, u.status AS user_status
+              u.username, u.full_name, u.avatar, u.bio, u.status AS user_status, u.last_seen_at
        FROM friend_requests fr
        INNER JOIN users u ON u.id = fr.sender_id
        WHERE fr.receiver_id = ? AND fr.status = 'pending'
@@ -238,7 +240,7 @@ async function listSentRequests(req, res) {
     const userId = req.user.id;
     const rows = await query(
       `SELECT fr.id, fr.sender_id, fr.receiver_id, fr.status, fr.created_at,
-              u.username, u.full_name, u.avatar, u.bio, u.status AS user_status
+              u.username, u.full_name, u.avatar, u.bio, u.status AS user_status, u.last_seen_at
        FROM friend_requests fr
        INNER JOIN users u ON u.id = fr.receiver_id
        WHERE fr.sender_id = ? AND fr.status = 'pending'

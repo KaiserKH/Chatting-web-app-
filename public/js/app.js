@@ -4,6 +4,11 @@ const state = {
   refreshToken: localStorage.getItem('refreshToken') || '',
   user: null,
   socket: null,
+  settings: loadSettings(),
+  presenceTimer: null,
+  presenceHeartbeat: null,
+  isAwayByIdle: false,
+  conversationFilter: 'all',
   conversations: [],
   currentConversationId: null,
   currentConversation: null,
@@ -20,10 +25,16 @@ const els = {
   loginForm: document.getElementById('loginForm'),
   registerForm: document.getElementById('registerForm'),
   tabs: Array.from(document.querySelectorAll('.tab')),
+  conversationFilters: Array.from(document.querySelectorAll('#conversationFilters .filter-chip')),
   profileAvatar: document.getElementById('profileAvatar'),
   profileName: document.getElementById('profileName'),
   profileHandle: document.getElementById('profileHandle'),
+  profilePresence: document.getElementById('profilePresence'),
+  profileLastSeen: document.getElementById('profileLastSeen'),
   logoutBtn: document.getElementById('logoutBtn'),
+  settingsBtn: document.getElementById('settingsBtn'),
+  newGroupBtn: document.getElementById('newGroupBtn'),
+  archivedBtn: document.getElementById('archivedBtn'),
   statusSelect: document.getElementById('statusSelect'),
   searchInput: document.getElementById('searchInput'),
   searchBtn: document.getElementById('searchBtn'),
@@ -44,8 +55,30 @@ const els = {
   refreshStoriesBtn: document.getElementById('refreshStoriesBtn'),
   markAllReadBtn: document.getElementById('markAllReadBtn'),
   newPrivateBtn: document.getElementById('newPrivateBtn'),
+  settingsModal: document.getElementById('settingsModal'),
+  settingAutoAway: document.getElementById('settingAutoAway'),
+  settingCompact: document.getElementById('settingCompact'),
+  settingSounds: document.getElementById('settingSounds'),
+  settingPreviews: document.getElementById('settingPreviews'),
+  saveSettingsBtn: document.getElementById('saveSettingsBtn'),
   toast: document.getElementById('toast')
 };
+
+function loadSettings() {
+  const defaults = {
+    autoAway: true,
+    compactMode: false,
+    soundEnabled: true,
+    showPreviews: true
+  };
+
+  try {
+    const stored = JSON.parse(localStorage.getItem('chatAppSettings') || '{}');
+    return { ...defaults, ...stored };
+  } catch (error) {
+    return defaults;
+  }
+}
 
 function notify(text) {
   els.toast.textContent = text;
@@ -64,6 +97,236 @@ function setTokenPair(accessToken, refreshToken) {
   state.refreshToken = refreshToken || '';
   localStorage.setItem('accessToken', state.accessToken);
   localStorage.setItem('refreshToken', state.refreshToken);
+}
+
+function saveSettings(nextSettings = state.settings) {
+  state.settings = { ...state.settings, ...nextSettings };
+  localStorage.setItem('chatAppSettings', JSON.stringify(state.settings));
+  document.body.classList.toggle('compact-mode', !!state.settings.compactMode);
+}
+
+function syncSettingsForm() {
+  els.settingAutoAway.checked = !!state.settings.autoAway;
+  els.settingCompact.checked = !!state.settings.compactMode;
+  els.settingSounds.checked = !!state.settings.soundEnabled;
+  els.settingPreviews.checked = !!state.settings.showPreviews;
+  document.body.classList.toggle('compact-mode', !!state.settings.compactMode);
+}
+
+function openSettings() {
+  syncSettingsForm();
+  els.settingsModal.classList.remove('hidden');
+}
+
+function closeSettings() {
+  els.settingsModal.classList.add('hidden');
+}
+
+function formatLastSeen(value) {
+  if (!value) {
+    return 'Last seen recently';
+  }
+
+  const date = new Date(value);
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (Number.isNaN(date.getTime()) || seconds < 60) {
+    return 'Last seen just now';
+  }
+  if (seconds < 3600) {
+    return `Last seen ${Math.floor(seconds / 60)}m ago`;
+  }
+  if (seconds < 86400) {
+    return `Last seen ${Math.floor(seconds / 3600)}h ago`;
+  }
+  return `Last seen ${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function getStatusClass(status) {
+  if (status === 'online') return 'status-online';
+  if (status === 'away') return 'status-away';
+  if (status === 'busy') return 'status-busy';
+  return 'status-offline';
+}
+
+function playMessageSound() {
+  if (!state.settings.soundEnabled) {
+    return;
+  }
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    return;
+  }
+
+  const context = new AudioContextClass();
+  const oscillator = context.createOscillator();
+  const gainNode = context.createGain();
+  oscillator.type = 'sine';
+  oscillator.frequency.value = 760;
+  gainNode.gain.value = 0.0001;
+  oscillator.connect(gainNode);
+  gainNode.connect(context.destination);
+  oscillator.start();
+  gainNode.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.01);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.16);
+  oscillator.stop(context.currentTime + 0.18);
+  oscillator.onended = () => context.close();
+}
+
+async function setMyStatus(status, { silent = false } = {}) {
+  if (!state.user || state.user.status === status) {
+    return;
+  }
+
+  await request('/api/users/status', {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
+  });
+
+  state.user.status = status;
+  state.user.last_seen_at = status === 'offline' ? new Date().toISOString() : state.user.last_seen_at;
+  renderProfile();
+  renderFriends();
+  renderConversations();
+
+  if (!silent) {
+    notify(`Status set to ${status}`);
+  }
+}
+
+function syncPresenceToState({ userId, status, lastSeenAt }) {
+  const targetId = Number(userId);
+
+  if (state.user && Number(state.user.id) === targetId) {
+    state.user.status = status;
+    if (lastSeenAt) {
+      state.user.last_seen_at = lastSeenAt;
+    }
+    renderProfile();
+  }
+
+  state.friends = state.friends.map((friend) => {
+    if (Number(friend.id) !== targetId) {
+      return friend;
+    }
+
+    return {
+      ...friend,
+      status,
+      last_seen_at: lastSeenAt || friend.last_seen_at
+    };
+  });
+
+  state.conversations = state.conversations.map((conversation) => {
+    if (!conversation.participant || Number(conversation.participant.id) !== targetId) {
+      return conversation;
+    }
+
+    return {
+      ...conversation,
+      participant: {
+        ...conversation.participant,
+        status,
+        last_seen_at: lastSeenAt || conversation.participant.last_seen_at
+      }
+    };
+  });
+
+  renderFriends();
+  renderConversations();
+}
+
+function markActivity() {
+  state.presenceTimer = Date.now();
+
+  if (state.settings.autoAway && state.user && state.user.status === 'away' && !state.isAwayByIdle) {
+    state.isAwayByIdle = false;
+    setMyStatus('online', { silent: true }).catch(() => {});
+  }
+}
+
+function setupAutoPresenceTracking() {
+  state.presenceTimer = Date.now();
+  const resetTimers = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'];
+  resetTimers.forEach((eventName) => {
+    window.addEventListener(eventName, markActivity, { passive: true });
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (state.settings.autoAway && state.user && state.user.status === 'online') {
+        state.isAwayByIdle = true;
+        setMyStatus('away', { silent: true }).catch(() => {});
+      }
+      return;
+    }
+
+    markActivity();
+  });
+
+  clearInterval(state.presenceHeartbeat);
+  state.presenceHeartbeat = setInterval(() => {
+    if (!state.settings.autoAway || !state.user) {
+      return;
+    }
+
+    const idleMs = Date.now() - (state.presenceTimer || Date.now());
+    if (idleMs > 60000 && state.user.status === 'online' && !state.isAwayByIdle) {
+      state.isAwayByIdle = true;
+      setMyStatus('away', { silent: true }).catch(() => {});
+    }
+  }, 15000);
+}
+
+function getConversationLabel(conversation) {
+  if (conversation.type === 'group') {
+    return conversation.name || 'Group';
+  }
+
+  return conversation.participant?.full_name || conversation.participant?.username || 'Private chat';
+}
+
+function getConversationPreview(conversation) {
+  if (!state.settings.showPreviews) {
+    return '';
+  }
+
+  return conversation.last_message_preview || 'No messages yet';
+}
+
+function getConversationStatus(conversation) {
+  if (conversation.type !== 'private' || !conversation.participant) {
+    return null;
+  }
+
+  return {
+    status: conversation.participant.status || 'offline',
+    lastSeenAt: conversation.participant.last_seen_at
+  };
+}
+
+function formatConversationFilterLabel(filter) {
+  return filter.charAt(0).toUpperCase() + filter.slice(1);
+}
+
+function resolveFilterMatches(conversation) {
+  if (state.conversationFilter === 'all') {
+    return true;
+  }
+
+  if (state.conversationFilter === 'unread') {
+    return conversation.unread_count > 0;
+  }
+
+  return conversation.type === state.conversationFilter;
+}
+
+function applyConversationFilter(filter) {
+  state.conversationFilter = filter;
+  els.conversationFilters.forEach((button) => {
+    button.classList.toggle('active', button.dataset.filter === filter);
+  });
+  renderConversations();
 }
 
 async function request(path, options = {}) {
@@ -141,8 +404,18 @@ function connectSocket() {
       state.messages.push(message);
       renderMessages();
       markMessageRead(message.id);
+      playMessageSound();
     }
     loadConversations();
+  });
+  state.socket.on('user_status_update', ({ userId, status, lastSeenAt }) => {
+    syncPresenceToState({ userId, status, lastSeenAt });
+  });
+  state.socket.on('user_online', ({ userId }) => {
+    syncPresenceToState({ userId, status: 'online' });
+  });
+  state.socket.on('user_offline', ({ userId }) => {
+    syncPresenceToState({ userId, status: 'offline', lastSeenAt: new Date().toISOString() });
   });
   state.socket.on('message_edited', ({ messageId, content, conversationId }) => {
     if (Number(conversationId) === Number(state.currentConversationId)) {
@@ -197,18 +470,48 @@ function renderProfile() {
   els.profileName.textContent = state.user.full_name || state.user.username;
   els.profileHandle.textContent = `@${state.user.username}`;
   els.statusSelect.value = state.user.status || 'offline';
+  els.profilePresence.className = `status-pill ${getStatusClass(state.user.status || 'offline')}`;
+  els.profilePresence.textContent = state.user.status || 'offline';
+
+  if (state.user.status === 'offline') {
+    els.profileLastSeen.textContent = formatLastSeen(state.user.last_seen_at);
+  } else if (state.user.status === 'away') {
+    els.profileLastSeen.textContent = 'Away right now';
+  } else {
+    els.profileLastSeen.textContent = 'Active now';
+  }
 }
 
 function renderConversations() {
   els.conversationList.innerHTML = '';
-  state.conversations.forEach((conversation) => {
+  const conversations = state.conversations.filter(resolveFilterMatches).sort((left, right) => {
+    if (right.unread_count !== left.unread_count) {
+      return right.unread_count - left.unread_count;
+    }
+
+    const leftActive = left.participant?.status === 'online' ? 1 : 0;
+    const rightActive = right.participant?.status === 'online' ? 1 : 0;
+    if (leftActive !== rightActive) {
+      return rightActive - leftActive;
+    }
+
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+  });
+
+  conversations.forEach((conversation) => {
     const button = document.createElement('button');
     button.className = `card-item ${Number(conversation.id) === Number(state.currentConversationId) ? 'active' : ''}`;
     button.innerHTML = `
-      <strong>${conversation.name || conversation.participant?.full_name || conversation.participant?.username || 'Private chat'}</strong>
-      <span>${conversation.last_message_preview || 'No messages yet'}</span>
-      <small>${conversation.unread_count} unread</small>
+      <strong>${getConversationLabel(conversation)}</strong>
+      <span class="conversation-subtitle">
+        ${conversation.type === 'private' ? `<span class="conversation-dot ${getStatusClass(conversation.participant?.status || 'offline')}"></span>` : ''}
+        <span class="message-preview ${conversation.unread_count > 0 ? 'strong' : ''}">${getConversationPreview(conversation)}</span>
+      </span>
     `;
+    const badge = document.createElement('span');
+    badge.className = 'conversation-badge';
+    badge.textContent = conversation.unread_count > 0 ? `${conversation.unread_count}` : formatConversationFilterLabel(conversation.type);
+    button.appendChild(badge);
     button.addEventListener('click', () => openConversation(conversation.id));
     els.conversationList.appendChild(button);
   });
@@ -261,7 +564,10 @@ function renderFriends() {
     item.className = 'card-item';
     item.innerHTML = `
       <strong>${friend.full_name || friend.username}</strong>
-      <span>@${friend.username} · ${friend.status}</span>
+      <span class="conversation-subtitle">
+        <span class="status-pill ${getStatusClass(friend.status || 'offline')}">${friend.status || 'offline'}</span>
+        <span class="message-preview">${friend.status === 'offline' ? formatLastSeen(friend.last_seen_at) : `@${friend.username}`}</span>
+      </span>
     `;
     const dmBtn = document.createElement('button');
     dmBtn.className = 'ghost small';
@@ -308,7 +614,7 @@ function renderSearchResults(users) {
     item.className = 'card-item';
     item.innerHTML = `
       <strong>${user.full_name || user.username}</strong>
-      <span>@${user.username} · ${user.friend_status} · ${user.mutual_friends_count} mutual</span>
+      <span class="message-preview">@${user.username} · ${user.friend_status} · ${user.mutual_friends_count} mutual</span>
     `;
     const actions = document.createElement('div');
     actions.style.display = 'flex';
@@ -416,6 +722,7 @@ async function signOut(callApi = true) {
   state.currentConversationId = null;
   state.currentConversation = null;
   state.messages = [];
+  clearInterval(state.presenceHeartbeat);
   switchView(false);
 }
 
@@ -437,7 +744,10 @@ async function handleAuthSubmit(form, endpoint) {
   state.user = payload.user;
   switchView(true);
   renderProfile();
+  syncSettingsForm();
   connectSocket();
+  setupAutoPresenceTracking();
+  markActivity();
   await Promise.all([loadConversations(), loadFriends(), loadNotifications(), loadStories()]);
 }
 
@@ -554,6 +864,36 @@ async function bootstrap() {
   els.refreshConversationsBtn.addEventListener('click', () => loadConversations().catch((error) => notify(error.message)));
   els.refreshFriendsBtn.addEventListener('click', () => loadFriends().catch((error) => notify(error.message)));
   els.refreshStoriesBtn.addEventListener('click', () => loadStories().catch((error) => notify(error.message)));
+  els.settingsBtn.addEventListener('click', openSettings);
+  els.newGroupBtn.addEventListener('click', async () => {
+    const name = prompt('Group name');
+    if (!name) return;
+
+    const usernames = prompt('Member usernames separated by commas');
+    if (!usernames) return;
+
+    const memberIds = [];
+    for (const rawName of usernames.split(',')) {
+      const username = rawName.trim();
+      if (!username) continue;
+      const result = await request(`/api/users/search?q=${encodeURIComponent(username)}`);
+      const match = result.users.find((user) => user.username.toLowerCase() === username.toLowerCase());
+      if (match) {
+        memberIds.push(match.id);
+      }
+    }
+
+    const payload = await request('/api/conversations/group', {
+      method: 'POST',
+      body: JSON.stringify({ name, memberIds })
+    });
+
+    await loadConversations(payload.conversation.id);
+  });
+  els.archivedBtn.addEventListener('click', () => {
+    applyConversationFilter('unread');
+    notify('Unread chats highlighted');
+  });
   els.markAllReadBtn.addEventListener('click', async () => {
     await request('/api/notifications/read-all', { method: 'PATCH' });
     await loadNotifications();
@@ -567,6 +907,25 @@ async function bootstrap() {
     renderProfile();
   });
   els.messageForm.addEventListener('submit', (event) => sendMessage(event).catch((error) => notify(error.message)));
+  els.conversationFilters.forEach((button) => {
+    button.addEventListener('click', () => applyConversationFilter(button.dataset.filter));
+  });
+  els.settingsModal.querySelectorAll('[data-close-settings]').forEach((button) => {
+    button.addEventListener('click', closeSettings);
+  });
+  els.saveSettingsBtn.addEventListener('click', () => {
+    saveSettings({
+      autoAway: els.settingAutoAway.checked,
+      compactMode: els.settingCompact.checked,
+      soundEnabled: els.settingSounds.checked,
+      showPreviews: els.settingPreviews.checked
+    });
+    renderConversations();
+    renderFriends();
+    renderProfile();
+    closeSettings();
+    notify('Settings saved');
+  });
   els.newPrivateBtn.addEventListener('click', async () => {
     const username = prompt('Enter username to start a private chat');
     if (!username) return;
@@ -581,7 +940,10 @@ async function bootstrap() {
       state.user = me.user;
       switchView(true);
       renderProfile();
+      syncSettingsForm();
       connectSocket();
+      setupAutoPresenceTracking();
+      markActivity();
       await Promise.all([loadConversations(), loadFriends(), loadNotifications(), loadStories()]);
       return;
     } catch (error) {

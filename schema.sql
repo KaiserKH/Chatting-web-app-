@@ -28,6 +28,7 @@ CREATE TABLE users (
   avatar VARCHAR(255) NOT NULL DEFAULT '/uploads/default-avatar.svg',
   bio TEXT,
   status ENUM('online', 'offline', 'away') NOT NULL DEFAULT 'offline',
+  last_seen_at DATETIME DEFAULT NULL,
   is_verified TINYINT(1) NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,

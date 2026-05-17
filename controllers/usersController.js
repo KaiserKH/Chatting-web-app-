@@ -86,7 +86,7 @@ async function searchUsers(req, res) {
 
     const maps = await loadRelationshipMaps(currentUserId);
     const rows = await query(
-      `SELECT id, username, full_name, email, phone, avatar, bio, status, is_verified, created_at, updated_at
+      `SELECT id, username, full_name, email, phone, avatar, bio, status, last_seen_at, is_verified, created_at, updated_at
        FROM users
        WHERE id <> ?
          AND (username LIKE ? OR full_name LIKE ? OR phone LIKE ?)
@@ -114,7 +114,7 @@ async function viewPublicProfile(req, res) {
     const currentUserId = req.user ? req.user.id : null;
     const { username } = req.params;
     const rows = await query(
-      'SELECT id, username, full_name, email, phone, avatar, bio, status, is_verified, created_at, updated_at FROM users WHERE username = ? LIMIT 1',
+      'SELECT id, username, full_name, email, phone, avatar, bio, status, last_seen_at, is_verified, created_at, updated_at FROM users WHERE username = ? LIMIT 1',
       [username]
     );
 
@@ -160,7 +160,7 @@ async function updateProfile(req, res) {
     );
 
     const rows = await query(
-      'SELECT id, username, full_name, email, phone, avatar, bio, status, is_verified, created_at, updated_at FROM users WHERE id = ?',
+      'SELECT id, username, full_name, email, phone, avatar, bio, status, last_seen_at, is_verified, created_at, updated_at FROM users WHERE id = ?',
       [userId]
     );
 

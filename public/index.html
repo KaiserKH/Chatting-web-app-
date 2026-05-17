@@ -54,7 +54,13 @@
     <section id="appView" class="app-grid hidden">
       <aside class="sidebar">
         <div class="profile-card panel">
-          <img id="profileAvatar" class="avatar" alt="Your avatar" />
+          <div class="profile-topbar">
+            <img id="profileAvatar" class="avatar" alt="Your avatar" />
+            <div class="presence-stack">
+              <span id="profilePresence" class="status-pill status-offline">offline</span>
+              <span id="profileLastSeen" class="presence-meta">Last seen just now</span>
+            </div>
+          </div>
           <div>
             <h2 id="profileName">Loading...</h2>
             <p id="profileHandle">@user</p>
@@ -64,7 +70,11 @@
             <option value="away">away</option>
             <option value="offline">offline</option>
           </select>
-          <button id="logoutBtn" class="ghost">Logout</button>
+          <div class="quick-actions">
+            <button id="settingsBtn" class="ghost">Settings</button>
+            <button id="newGroupBtn" class="ghost">New group</button>
+          </div>
+          <button id="logoutBtn" class="ghost danger-ghost">Logout</button>
         </div>
 
         <div class="panel">
@@ -111,6 +121,7 @@
             <p id="conversationMeta">Messages will appear here in real time.</p>
           </div>
           <div class="chat-actions">
+            <button id="archivedBtn" class="ghost">Archived</button>
             <button id="newPrivateBtn" class="ghost">New DM</button>
             <button id="refreshConversationsBtn" class="ghost">Refresh</button>
           </div>
@@ -120,6 +131,12 @@
           <aside class="conversation-list panel-inner">
             <div class="panel-heading">
               <h3>Chats</h3>
+            </div>
+            <div class="conversation-filters" id="conversationFilters">
+              <button class="filter-chip active" data-filter="all">All</button>
+              <button class="filter-chip" data-filter="unread">Unread</button>
+              <button class="filter-chip" data-filter="private">Private</button>
+              <button class="filter-chip" data-filter="group">Groups</button>
             </div>
             <div id="conversationList" class="stack"></div>
           </aside>
@@ -146,6 +163,58 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
+
+  <div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-backdrop" data-close-settings></div>
+    <section class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Preferences</p>
+          <h2 id="settingsTitle">Settings</h2>
+        </div>
+        <button class="ghost" data-close-settings>Close</button>
+      </div>
+
+      <div class="settings-grid">
+        <label class="setting-row">
+          <span>
+            <strong>Auto away detection</strong>
+            <small>Switch to away when you stop interacting for a while.</small>
+          </span>
+          <input id="settingAutoAway" type="checkbox" />
+        </label>
+
+        <label class="setting-row">
+          <span>
+            <strong>Compact chat layout</strong>
+            <small>Reduce spacing for a denser Telegram-style inbox.</small>
+          </span>
+          <input id="settingCompact" type="checkbox" />
+        </label>
+
+        <label class="setting-row">
+          <span>
+            <strong>Message sounds</strong>
+            <small>Play a sound for new incoming messages.</small>
+          </span>
+          <input id="settingSounds" type="checkbox" />
+        </label>
+
+        <label class="setting-row">
+          <span>
+            <strong>Show message previews</strong>
+            <small>Display the latest message in conversation cards.</small>
+          </span>
+          <input id="settingPreviews" type="checkbox" />
+        </label>
+      </div>
+
+      <div class="settings-actions">
+        <button id="saveSettingsBtn" class="primary">Save settings</button>
+      </div>
+    </section>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/app.js"></script>
 </body>

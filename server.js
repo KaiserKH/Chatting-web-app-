@@ -26,7 +26,21 @@ const uploadsDir = path.join(publicDir, 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
 app.set('io', io);
-app.use(helmet({ contentSecurityPolicy: false }));
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'", 'ws:', 'wss:']
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}));
 app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
