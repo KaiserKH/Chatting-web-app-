@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pulse Chat</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div class="bg-orb bg-orb-one"></div>
+  <div class="bg-orb bg-orb-two"></div>
+
+  <main class="shell">
+    <section id="authView" class="auth-panel">
+      <div class="brand">
+        <div class="brand-mark">P</div>
+        <div>
+          <h1>Pulse Chat</h1>
+          <p>Private conversations, stories, and real-time messaging.</p>
+        </div>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button class="tab active" data-tab="loginForm">Login</button>
+          <button class="tab" data-tab="registerForm">Register</button>
+        </div>
+
+        <form id="loginForm" class="auth-form active">
+          <label>
+            Email or username
+            <input name="identifier" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="primary">Sign in</button>
+        </form>
+
+        <form id="registerForm" class="auth-form">
+          <label>Username <input name="username" type="text" required /></label>
+          <label>Full name <input name="full_name" type="text" required /></label>
+          <label>Email <input name="email" type="email" required /></label>
+          <label>Phone <input name="phone" type="text" required /></label>
+          <label>Password <input name="password" type="password" required /></label>
+          <button type="submit" class="primary">Create account</button>
+        </form>
+
+        <p id="authMessage" class="message"></p>
+      </div>
+    </section>
+
+    <section id="appView" class="app-grid hidden">
+      <aside class="sidebar">
+        <div class="profile-card panel">
+          <img id="profileAvatar" class="avatar" alt="Your avatar" />
+          <div>
+            <h2 id="profileName">Loading...</h2>
+            <p id="profileHandle">@user</p>
+          </div>
+          <select id="statusSelect" class="status-select">
+            <option value="online">online</option>
+            <option value="away">away</option>
+            <option value="offline">offline</option>
+          </select>
+          <button id="logoutBtn" class="ghost">Logout</button>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <h3>Search</h3>
+          </div>
+          <div class="search-row">
+            <input id="searchInput" type="text" placeholder="Find people" />
+            <button id="searchBtn" class="ghost">Go</button>
+          </div>
+          <div id="searchResults" class="stack"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <h3>Friends</h3>
+            <button id="refreshFriendsBtn" class="ghost small">Refresh</button>
+          </div>
+          <div id="friendsList" class="stack"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <h3>Stories</h3>
+            <button id="refreshStoriesBtn" class="ghost small">Refresh</button>
+          </div>
+          <div id="storiesFeed" class="stack"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <h3>Notifications</h3>
+            <button id="markAllReadBtn" class="ghost small">Mark all read</button>
+          </div>
+          <div id="notificationsList" class="stack"></div>
+        </div>
+      </aside>
+
+      <section class="chat-panel panel">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Active conversation</p>
+            <h2 id="conversationTitle">Select a chat</h2>
+            <p id="conversationMeta">Messages will appear here in real time.</p>
+          </div>
+          <div class="chat-actions">
+            <button id="newPrivateBtn" class="ghost">New DM</button>
+            <button id="refreshConversationsBtn" class="ghost">Refresh</button>
+          </div>
+        </header>
+
+        <div class="content-grid">
+          <aside class="conversation-list panel-inner">
+            <div class="panel-heading">
+              <h3>Chats</h3>
+            </div>
+            <div id="conversationList" class="stack"></div>
+          </aside>
+
+          <section class="messages-panel panel-inner">
+            <div id="messagesList" class="messages-list"></div>
+            <form id="messageForm" class="composer">
+              <input id="messageInput" type="text" placeholder="Write a message" autocomplete="off" />
+              <input id="fileInput" type="file" />
+              <select id="messageType">
+                <option value="text">text</option>
+                <option value="image">image</option>
+                <option value="video">video</option>
+                <option value="audio">audio</option>
+                <option value="file">file</option>
+                <option value="sticker">sticker</option>
+              </select>
+              <button type="submit" class="primary">Send</button>
+            </form>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+.env
+node_modules/
+public/uploads/*
+!public/uploads/default-avatar.svg
